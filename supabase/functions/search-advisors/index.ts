@@ -57,7 +57,8 @@ Deno.serve(async (req) => {
     const type = typeof body.type === 'string' && VALID_TYPES.has(body.type) ? body.type : null;
 
     const apiKey = Deno.env.get('FIRECRAWL_API_KEY');
-    if (!apiKey) {
+    const lovableKey = Deno.env.get('LOVABLE_API_KEY');
+    if (!apiKey || !lovableKey) {
       return new Response(
         JSON.stringify({ success: false, error: 'Firecrawl connector not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -75,10 +76,11 @@ Deno.serve(async (req) => {
 
     console.log('Searching for advisors:', query);
 
-    const response = await fetch('https://api.firecrawl.dev/v1/search', {
+    const response = await fetch('https://connector-gateway.lovable.dev/firecrawl/v2/search', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${lovableKey}`,
+        'X-Connection-Api-Key': apiKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
