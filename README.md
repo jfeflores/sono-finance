@@ -1,8 +1,6 @@
-# Sono Finance
+# Sono Finance | Made within 24 hours.
 
-I want you to use the Sono Finance App Zip as the basis of the UI/UX design of the application. I want you to use the HTML provided to make the Learning tab fully functional by making each lesson an interactive game and questionnaire.  The entire app must be fully functional, or at the very least, semi-usable. 
-
-Make error corrections, refinements, and polishes. Do not rush the process; take your time and be careful with your decision-making. Use smooth animations.
+This was a project assisted with AI during a 24-hour hackathon.
 
 This project was built with [Lovable](https://lovable.dev).
 
