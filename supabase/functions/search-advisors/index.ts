@@ -99,7 +99,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    const advisors = (data.data || [])
+    const results = Array.isArray(data.data) ? data.data : (data.data?.web || []);
+    const advisors = results
       .filter((r: any) => r.title && r.url)
       .map((result: any, i: number) => ({
         name: result.title?.replace(/ - .*$/, '').replace(/\|.*$/, '').trim().slice(0, 60) || `Result ${i + 1}`,
