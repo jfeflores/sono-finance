@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import QRCode from "qrcode";
+import { publicShareUrl } from "@/lib/privacy";
 
 interface StreakModalProps {
   open: boolean;
@@ -60,10 +62,7 @@ export default function StreakModal({ open, onClose, streak }: StreakModalProps)
     setSononiteState(balance);
     setInventoryState(getInventory());
 
-    // Generate referral link
-    const userId = localStorage.getItem("sono-user-email") || "user";
-    const code = btoa(userId).replace(/[^a-zA-Z0-9]/g, "").slice(0, 8).toUpperCase();
-    setReferralLink(`https://sonofinance.lovable.app/?ref=${code}`);
+    setReferralLink(publicShareUrl(window.location.origin));
   }, [open]);
 
   const handleBuy = useCallback((item: "freeze" | "heart") => {
@@ -143,8 +142,16 @@ export default function StreakModal({ open, onClose, streak }: StreakModalProps)
     },
   ];
 
-  // Simple QR via a public API (no dependency needed)
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(referralLink)}&bgcolor=0d0d12&color=6b8afd&format=svg`;
+  const [qrUrl, setQrUrl] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    if (showQr && referralLink) {
+      QRCode.toDataURL(referralLink, { width: 180, margin: 2 }).then(url => {
+        if (!cancelled) setQrUrl(url);
+      }).catch(() => { if (!cancelled) setQrUrl(""); });
+    }
+    return () => { cancelled = true; };
+  }, [showQr, referralLink]);
 
   return (
     <AnimatePresence>
@@ -431,7 +438,7 @@ export default function StreakModal({ open, onClose, streak }: StreakModalProps)
                         </button>
 
                         <AnimatePresence>
-                          {showQr && (
+                          {showQr && qrUrl && (
                             <motion.div
                               initial={{ height: 0, opacity: 0 }}
                               animate={{ height: "auto", opacity: 1 }}
@@ -450,7 +457,7 @@ export default function StreakModal({ open, onClose, streak }: StreakModalProps)
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           onClick={() => {
-                            window.open(`https://wa.me/?text=${encodeURIComponent(`Join me on Sono Finance! ${referralLink}`)}`, "_blank");
+                            window.open(`https://wa.me/?text=${encodeURIComponent(`Join me on Sono Finance! ${referralLink}`)}`, "_blank", "noopener,noreferrer");
                           }}
                           className="flex items-center justify-center gap-2 py-3 rounded-xl bg-[#25D366]/10 text-[#25D366] text-xs font-bold border border-[#25D366]/20 hover:bg-[#25D366]/20 transition-colors"
                         >
@@ -458,7 +465,7 @@ export default function StreakModal({ open, onClose, streak }: StreakModalProps)
                         </button>
                         <button
                           onClick={() => {
-                            window.open(`mailto:?subject=Join Sono Finance&body=${encodeURIComponent(`Check out Sono Finance! ${referralLink}`)}`, "_blank");
+                            window.open(`mailto:?subject=Join Sono Finance&body=${encodeURIComponent(`Check out Sono Finance! ${referralLink}`)}`, "_blank", "noopener,noreferrer");
                           }}
                           className="flex items-center justify-center gap-2 py-3 rounded-xl bg-primary/10 text-primary text-xs font-bold border border-primary/20 hover:bg-primary/20 transition-colors"
                         >
