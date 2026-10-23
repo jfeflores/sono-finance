@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 function getDashboardData() {
   try {
-    const raw = localStorage.getItem("dash_overview");
+    const raw = sessionStorage.getItem("dash_overview");
     if (raw) {
       const d = JSON.parse(raw);
       return {
@@ -22,16 +22,16 @@ function getDashboardData() {
 
 // Fake leaderboard users
 const FAKE_USERS = [
-  { name: "Alex M.", xp: 4200 },
-  { name: "Sarah K.", xp: 3800 },
-  { name: "Jordan T.", xp: 3100 },
-  { name: "Maya R.", xp: 2900 },
-  { name: "Chris L.", xp: 2400 },
+  { name: "Sample learner 1", xp: 4200 },
+  { name: "Sample learner 2", xp: 3800 },
+  { name: "Sample learner 3", xp: 3100 },
+  { name: "Sample learner 4", xp: 2900 },
+  { name: "Sample learner 5", xp: 2400 },
 ];
 
 function getCompletedLessons(): string[] {
   try {
-    return JSON.parse(localStorage.getItem("sono-completed-lessons") || "[]");
+    return JSON.parse(sessionStorage.getItem("sono-completed-lessons") || "[]");
   } catch { return []; }
 }
 
@@ -96,7 +96,7 @@ const ForecastSection = ({ balance, savingsCurrent, totalSpent }: { balance: num
     if (totalSpent === 0) return;
     const cacheKey = "sono-forecast-ai";
     try {
-      const cached = localStorage.getItem(cacheKey);
+      const cached = sessionStorage.getItem(cacheKey);
       if (cached) {
         const { text, ts, hash } = JSON.parse(cached);
         if (Date.now() - ts < 3600000 && hash === `${balance}-${savingsCurrent}-${totalSpent}`) {
@@ -111,13 +111,14 @@ const ForecastSection = ({ balance, savingsCurrent, totalSpent }: { balance: num
       setAiLoading(true);
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+        const token = session?.access_token;
+        if (!token) return;
         const prompt = `You are a concise financial advisor. Based on this data, give exactly 2 short, specific recommendations (each 1 sentence). Net worth: $${forecast.netWorth.toLocaleString()}, monthly income ~$${forecast.monthlyIncome.toLocaleString()}, monthly spending: $${forecast.totalSpent.toLocaleString()}, monthly savings rate: $${forecast.monthlySavingsRate.toLocaleString()}, savings: $${savingsCurrent.toLocaleString()}. Net worth trend: ${netWorthTrend ? "growing" : "declining"}. Spending trend: ${spendingTrend ? "increasing" : "stable/decreasing"}. Format as two bullet points starting with emoji.`;
 
         const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ messages: [{ role: "user", content: prompt }] }),
+          body: JSON.stringify({ feature: "insights", messages: [{ role: "user", content: prompt }] }),
         });
         if (!resp.ok || !resp.body) return;
         const reader = resp.body.getReader();
@@ -144,9 +145,9 @@ const ForecastSection = ({ balance, savingsCurrent, totalSpent }: { balance: num
         }
         if (!cancelled && full) {
           setAiRec(full);
-          localStorage.setItem(cacheKey, JSON.stringify({ text: full, ts: Date.now(), hash: `${balance}-${savingsCurrent}-${totalSpent}` }));
+          sessionStorage.setItem(cacheKey, JSON.stringify({ text: full, ts: Date.now(), hash: `${balance}-${savingsCurrent}-${totalSpent}` }));
         }
-      } catch (e) { console.error("Forecast AI error:", e); }
+      } catch (e) {  }
       finally { if (!cancelled) setAiLoading(false); }
     })();
     return () => { cancelled = true; };
@@ -256,7 +257,7 @@ const HubPage = ({ onTabChange }: HubPageProps) => {
   const completedLessons = getCompletedLessons();
   const userXp = computeXp(completedLessons.length);
   const avatar = getStoredAvatar();
-  const userName = localStorage.getItem("sono-user-name") || "You";
+  const userName = "You";
   const dashData = getDashboardData();
 
   // Leaderboard

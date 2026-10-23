@@ -24,7 +24,7 @@ const TopBar = ({ streak }: TopBarProps) => {
   const [notifOpen, setNotifOpen] = useState(false);
   const [streakOpen, setStreakOpen] = useState(false);
   const avatar = getStoredAvatar();
-  const userName = localStorage.getItem("sono-user-name") || "You";
+  const userName = "You";
   const persona = localStorage.getItem("sono-persona") || "Starter";
   const userXp = computeXp(getCompletedLessons().length);
 

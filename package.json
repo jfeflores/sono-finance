@@ -53,6 +53,7 @@
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "^12.38.0",
     "input-otp": "^1.4.2",
+    "lodash": "^4.18.1",
     "lucide-react": "^0.462.0",
     "material-symbols": "^0.48.1",
     "next-themes": "^0.3.0",
@@ -69,6 +70,7 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.9",
+    "ws": "^8.22.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {

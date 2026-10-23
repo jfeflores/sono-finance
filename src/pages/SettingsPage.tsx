@@ -8,11 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import appLogo from "@/assets/app-logo.png";
+import { clearAccountData } from "@/lib/privacy";
+import { clearPremiumCache } from "@/lib/usageLimits";
 
 const SettingsPage = () => {
   const [darkMode, setDarkMode] = useState(() => !document.documentElement.classList.contains("light"));
   const [notifications, setNotifications] = useState(true);
-  const [biometrics, setBiometrics] = useState(false);
   const [avatar, setAvatar] = useState<AvatarConfig>(getStoredAvatar);
   const [showAvatarEditor, setShowAvatarEditor] = useState(false);
   const [premium, setPremium] = useState(false);
@@ -22,8 +23,8 @@ const SettingsPage = () => {
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [saving, setSaving] = useState(false);
-  const [displayName, setDisplayName] = useState(localStorage.getItem("sono-user-name") || "");
-  const [displayEmail, setDisplayEmail] = useState(localStorage.getItem("sono-user-email") || "");
+  const [displayName, setDisplayName] = useState("");
+  const [displayEmail, setDisplayEmail] = useState("");
 
   useEffect(() => {
     checkPremium().then(setPremium);
@@ -32,11 +33,11 @@ const SettingsPage = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setDisplayEmail(user.email || "");
-        localStorage.setItem("sono-user-email", user.email || "");
+        
         const { data: profile } = await supabase.from("profiles").select("display_name").eq("id", user.id).single();
         if (profile?.display_name) {
           setDisplayName(profile.display_name);
-          localStorage.setItem("sono-user-name", profile.display_name);
+          
         }
       }
     })();
@@ -89,8 +90,8 @@ const SettingsPage = () => {
       }
 
       // Sync localStorage
-      localStorage.setItem("sono-user-name", name);
-      localStorage.setItem("sono-user-email", email);
+      
+      
       setDisplayName(name);
       setDisplayEmail(email);
       setEditOpen(false);
@@ -198,8 +199,8 @@ const SettingsPage = () => {
           Account Settings
         </h2>
         <div className="glass-card rounded-2xl overflow-hidden divide-y divide-border">
-          <SettingsRow icon="account_balance" iconColor="text-primary" title="Connected Banks" subtitle="Bank of America, Chase" />
-          <SettingsRow icon="group" iconColor="text-secondary" title="Linked Users" subtitle="Sharing budget with JS, AL" />
+          <SettingsRow icon="account_balance" iconColor="text-primary" title="Connected Banks" subtitle="No bank integration configured" />
+          <SettingsRow icon="group" iconColor="text-secondary" title="Linked Users" subtitle="No sharing configured" />
         </div>
       </motion.section>
 
@@ -216,7 +217,6 @@ const SettingsPage = () => {
         <div className="glass-card rounded-2xl p-4 space-y-5">
           <ToggleRow icon="dark_mode" title="Dark Mode" enabled={darkMode} onToggle={handleThemeToggle} />
           <ToggleRow icon="notifications" title="Notifications" enabled={notifications} onToggle={() => setNotifications(!notifications)} />
-          <ToggleRow icon="fingerprint" title="Biometric Lock" enabled={biometrics} onToggle={() => setBiometrics(!biometrics)} />
         </div>
       </motion.section>
 
@@ -231,9 +231,9 @@ const SettingsPage = () => {
           Security
         </h2>
         <div className="glass-card rounded-2xl overflow-hidden divide-y divide-border">
-          <SettingsRow icon="lock" iconColor="text-primary" title="Change Password" subtitle="Last changed 30 days ago" />
-          <SettingsRow icon="verified_user" iconColor="text-secondary" title="Two-Factor Auth" subtitle="Enabled via authenticator" />
-          <SettingsRow icon="download" iconColor="text-muted-foreground" title="Export Data" subtitle="Download all your data" />
+          <SettingsRow icon="lock" iconColor="text-primary" title="Change Password" subtitle="Not configured" />
+          <SettingsRow icon="verified_user" iconColor="text-secondary" title="Two-Factor Auth" subtitle="Not configured" />
+          <SettingsRow icon="download" iconColor="text-muted-foreground" title="Export Data" subtitle="Not available" />
         </div>
       </motion.section>
 
@@ -322,15 +322,8 @@ const SettingsPage = () => {
       >
         <button
           onClick={async () => {
-            // Clear all app state so next login feels fresh
-            const keysToRemove = [
-              "sono-persona", "sono-demo-seeded", "sono-tour-completed",
-              "sono-user-name", "sono-user-email", "sono-bank-connected",
-              "sono-avatar", "sono-completed-lessons", "sono-balance-history",
-              "sono-ai-welcomed", "sono-chat-cache", "sono-weekly-digest",
-              "dash_overview", "sono-theme",
-            ];
-            keysToRemove.forEach(k => localStorage.removeItem(k));
+            clearAccountData();
+            clearPremiumCache();
             await supabase.auth.signOut();
           }}
           className="w-full py-3 rounded-2xl border border-destructive/30 text-destructive text-sm font-semibold hover:bg-destructive/10 transition-all active:scale-[0.98]"

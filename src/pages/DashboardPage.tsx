@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { safeExternalUrl } from "@/lib/privacy";
 
 type DashTab = "overview" | "expenses" | "spending" | "resources";
 
@@ -366,22 +367,12 @@ const NetWorthSection = ({ balance, savingsCurrent, onAiDiscuss }: { balance: nu
 interface BudgetEntry { icon: string; name: string; spent: number; budget: number; color: string; }
 interface TransactionEntry { icon: string; name: string; date: string; amount: string; positive?: boolean; }
 
-function getIsTestUser() {
-  const name = (localStorage.getItem("sono-user-name") || "").trim().toLowerCase();
-  const email = (localStorage.getItem("sono-user-email") || "").trim().toLowerCase();
-  return name === "test" || email === "test" || email === "demo@sonofinance.app";
-}
-function getBankConnected() {
-  return localStorage.getItem("sono-bank-connected") === "true";
-}
 function getHasData() {
-  return getBankConnected() || getIsTestUser();
+  const saved = loadOverviewState();
+  return !!saved && (saved.balance > 0 || saved.savingsCurrent > 0 || saved.budgets?.some((b: BudgetEntry) => b.spent > 0 || b.budget > 0));
 }
 
-// ── Realistic data for a 25-year-old young professional ──
-// Salary ~$55k/yr → ~$3,520 net biweekly after taxes
-// Shares a 1BR apartment, drives a used car, active social life
-
+// Anonymous category templates; balances begin empty.
 const EXPENSE_CATEGORIES = [
   { name: "Housing", icon: "home", amount: 1350, budget: 1400, color: "primary" },
   { name: "Food & Dining", icon: "restaurant", amount: 520, budget: 550, color: "secondary" },
@@ -398,70 +389,28 @@ function expenseToBudget(cat: typeof EXPENSE_CATEGORIES[number]): BudgetEntry {
 }
 
 function getDefaultBudgets(): BudgetEntry[] {
-  if (getIsTestUser()) return EXPENSE_CATEGORIES.map(expenseToBudget);
-  if (getBankConnected()) return EXPENSE_CATEGORIES.map(c => expenseToBudget({ ...c, amount: Math.round(c.amount * 0.7) }));
   return EXPENSE_CATEGORIES.map(c => expenseToBudget({ ...c, amount: 0, budget: 0 }));
 }
 
-const TEST_TRANSACTIONS: TransactionEntry[] = [
-  { icon: "coffee", name: "Starbucks", date: "Today, 7:32 AM", amount: "-$5.95" },
-  { icon: "fastfood", name: "Sweetgreen", date: "Today, 12:15 PM", amount: "-$16.80" },
-  { icon: "account_balance", name: "Paycheck – Acme Corp", date: "Mar 28", amount: "+$3,520.00", positive: true },
-  { icon: "home", name: "Rent – Elm St Apt", date: "Mar 27", amount: "-$1,350.00" },
-  { icon: "wifi", name: "Xfinity Internet", date: "Mar 26", amount: "-$49.99" },
-  { icon: "fitness_center", name: "LA Fitness", date: "Mar 25", amount: "-$34.99" },
-  { icon: "local_gas_station", name: "Shell Gas Station", date: "Mar 24", amount: "-$42.15" },
-  { icon: "shopping_cart", name: "Trader Joe's", date: "Mar 23", amount: "-$78.62" },
-  { icon: "movie", name: "Netflix + Spotify", date: "Mar 22", amount: "-$26.98" },
-  { icon: "restaurant", name: "Happy Hour – Draft House", date: "Mar 21", amount: "-$34.50" },
-  { icon: "shopping_bag", name: "Amazon – USB-C Hub", date: "Mar 20", amount: "-$29.99" },
-  { icon: "medical_services", name: "CVS Pharmacy", date: "Mar 19", amount: "-$12.40" },
-  { icon: "directions_car", name: "Car Insurance – Geico", date: "Mar 18", amount: "-$148.00" },
-  { icon: "school", name: "Coursera Subscription", date: "Mar 17", amount: "-$49.00" },
-  { icon: "savings", name: "Transfer to Savings", date: "Mar 15", amount: "-$400.00" },
-  { icon: "account_balance", name: "Paycheck – Acme Corp", date: "Mar 14", amount: "+$3,520.00", positive: true },
-];
-
-const BANK_TRANSACTIONS: TransactionEntry[] = [
-  { icon: "coffee", name: "Morning Coffee", date: "Today, 8:31 AM", amount: "-$5.40" },
-  { icon: "fitness_center", name: "Gym Membership", date: "Yesterday", amount: "-$49.99" },
-  { icon: "account_balance", name: "Salary Deposit", date: "Mar 25", amount: "+$3,200.00", positive: true },
-  { icon: "bolt", name: "Electric Bill", date: "Mar 24", amount: "-$127.50" },
-  { icon: "local_gas_station", name: "Gas Station", date: "Mar 23", amount: "-$42.00" },
-  { icon: "shopping_cart", name: "Grocery Store", date: "Mar 22", amount: "-$87.30" },
-  { icon: "movie", name: "Streaming Service", date: "Mar 21", amount: "-$15.99" },
-  { icon: "medical_services", name: "Pharmacy", date: "Mar 20", amount: "-$22.45" },
-];
-
-function getAllTransactions() {
-  return getIsTestUser() ? TEST_TRANSACTIONS : getBankConnected() ? BANK_TRANSACTIONS : [];
-}
-
-// Balance: ~$4,800 checking (young professional, post-rent)
-// Savings: $2,400 of $10,000 emergency fund goal (just started saving seriously)
-const TEST_BALANCE = 4832;
-const TEST_SAVINGS_GOAL = 10000;
-const TEST_SAVINGS_CURRENT = 2400;
+function getAllTransactions(): TransactionEntry[] { return []; }
 
 function loadOverviewState() {
   try {
-    const raw = localStorage.getItem("dash_overview");
+    const raw = sessionStorage.getItem("dash_overview");
     if (raw) return JSON.parse(raw);
   } catch {}
   return null;
 }
 
 function saveOverviewState(state: { balance: number; savingsGoal: number; savingsCurrent: number; budgets: BudgetEntry[] }) {
-  localStorage.setItem("dash_overview", JSON.stringify(state));
+  sessionStorage.setItem("dash_overview", JSON.stringify(state));
 }
 
 const OverviewTab = ({ onAiDiscuss }: { onAiDiscuss?: (prompt: string) => void }) => {
-  const isTest = getIsTestUser();
-  const bankConn = getBankConnected();
   const saved = loadOverviewState();
-  const [balance, setBalance] = useState<number>(saved?.balance ?? (isTest ? TEST_BALANCE : bankConn ? 24592 : 0));
-  const [savingsGoal, setSavingsGoal] = useState<number>(saved?.savingsGoal ?? (isTest ? TEST_SAVINGS_GOAL : bankConn ? 10000 : 0));
-  const [savingsCurrent, setSavingsCurrent] = useState<number>(saved?.savingsCurrent ?? (isTest ? TEST_SAVINGS_CURRENT : bankConn ? 8400 : 0));
+  const [balance, setBalance] = useState<number>(saved?.balance ?? 0);
+  const [savingsGoal, setSavingsGoal] = useState<number>(saved?.savingsGoal ?? 0);
+  const [savingsCurrent, setSavingsCurrent] = useState<number>(saved?.savingsCurrent ?? 0);
   const [budgets, setBudgets] = useState<BudgetEntry[]>(saved?.budgets ?? getDefaultBudgets());
   const [showAllTx, setShowAllTx] = useState(false);
 
@@ -479,7 +428,7 @@ const OverviewTab = ({ onAiDiscuss }: { onAiDiscuss?: (prompt: string) => void }
   useEffect(() => {
     saveOverviewState({ balance, savingsGoal, savingsCurrent, budgets });
     // Track balance history for growth metric
-    const history = JSON.parse(localStorage.getItem("sono-balance-history") || "[]") as { balance: number; ts: number }[];
+    const history = JSON.parse(sessionStorage.getItem("sono-balance-history") || "[]") as { balance: number; ts: number }[];
     const lastEntry = history[history.length - 1];
     // Only record if balance changed or no entries yet
     if (!lastEntry || lastEntry.balance !== balance) {
@@ -487,7 +436,7 @@ const OverviewTab = ({ onAiDiscuss }: { onAiDiscuss?: (prompt: string) => void }
       // Keep last 90 days max
       const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
       const trimmed = history.filter((h: { ts: number }) => h.ts > cutoff);
-      localStorage.setItem("sono-balance-history", JSON.stringify(trimmed));
+      sessionStorage.setItem("sono-balance-history", JSON.stringify(trimmed));
     }
   }, [balance, savingsGoal, savingsCurrent, budgets]);
 
@@ -502,7 +451,8 @@ const OverviewTab = ({ onAiDiscuss }: { onAiDiscuss?: (prompt: string) => void }
       const totalBudget = budgets.reduce((s, b) => s + b.budget, 0);
       const daysLeft = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() - new Date().getDate();
       const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const token = session?.access_token;
+      if (!token) return;
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/weekly-digest`, {
         method: "POST",
         headers: {
@@ -527,10 +477,10 @@ const OverviewTab = ({ onAiDiscuss }: { onAiDiscuss?: (prompt: string) => void }
         const data = await resp.json();
         setWeeklyDigest(data.digest);
         // Cache with timestamp
-        localStorage.setItem("sono-weekly-digest", JSON.stringify({ digest: data.digest, ts: Date.now(), dataHash: `${balance}-${savingsCurrent}-${savingsGoal}` }));
+        sessionStorage.setItem("sono-weekly-digest", JSON.stringify({ digest: data.digest, ts: Date.now(), dataHash: `${balance}-${savingsCurrent}-${savingsGoal}` }));
       }
     } catch (e) {
-      console.error("Digest fetch error:", e);
+      
     } finally {
       setDigestLoading(false);
     }
@@ -539,7 +489,7 @@ const OverviewTab = ({ onAiDiscuss }: { onAiDiscuss?: (prompt: string) => void }
   // Load cached digest or fetch new one
   useEffect(() => {
     try {
-      const cached = localStorage.getItem("sono-weekly-digest");
+      const cached = sessionStorage.getItem("sono-weekly-digest");
       if (cached) {
         const { digest, ts, dataHash } = JSON.parse(cached);
         const age = Date.now() - ts;
@@ -654,7 +604,7 @@ const OverviewTab = ({ onAiDiscuss }: { onAiDiscuss?: (prompt: string) => void }
           <div>
             <span className="text-3xl font-bold text-foreground tracking-tight">${balance.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
             {(() => {
-              const history = JSON.parse(localStorage.getItem("sono-balance-history") || "[]") as { balance: number; ts: number }[];
+              const history = JSON.parse(sessionStorage.getItem("sono-balance-history") || "[]") as { balance: number; ts: number }[];
               const now = Date.now();
               const monthAgo = now - 30 * 24 * 60 * 60 * 1000;
               const prevEntry = history.filter(h => h.ts < monthAgo).pop() || history[0];
@@ -1014,7 +964,7 @@ function useAiInsight(prompt: string, deps: string) {
     if (!getHasData()) return;
     const cacheKey = `sono-ai-insight-${btoa(deps).slice(0, 32)}`;
     try {
-      const cached = localStorage.getItem(cacheKey);
+      const cached = sessionStorage.getItem(cacheKey);
       if (cached) {
         const { text, ts } = JSON.parse(cached);
         if (Date.now() - ts < 3600000) { setInsight(text); return; }
@@ -1026,11 +976,12 @@ function useAiInsight(prompt: string, deps: string) {
       setLoading(true);
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+        const token = session?.access_token;
+      if (!token) return;
         const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ messages: [{ role: "user", content: prompt }] }),
+          body: JSON.stringify({ feature: "insights", messages: [{ role: "user", content: prompt }] }),
         });
         if (!resp.ok || !resp.body) return;
         const reader = resp.body.getReader();
@@ -1057,9 +1008,9 @@ function useAiInsight(prompt: string, deps: string) {
         }
         if (!cancelled && full) {
           setInsight(full);
-          localStorage.setItem(cacheKey, JSON.stringify({ text: full, ts: Date.now() }));
+          sessionStorage.setItem(cacheKey, JSON.stringify({ text: full, ts: Date.now() }));
         }
-      } catch (e) { console.error("AI insight error:", e); }
+      } catch (e) {  }
       finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
@@ -1470,10 +1421,13 @@ const ResourcesTab = () => {
       });
       if (fnError) throw new Error(fnError.message);
       if (!data?.success) throw new Error(data?.error || 'Search failed');
-      setAdvisors(data.advisors || []);
+      setAdvisors((data.advisors || []).flatMap((advisor: LiveAdvisor) => {
+        const url = safeExternalUrl(advisor.url);
+        return url ? [{ ...advisor, url }] : [];
+      }));
       setSearched(true);
     } catch (e: any) {
-      console.error('Search error:', e);
+      
       setError(e.message || 'Failed to search. Please try again.');
       setAdvisors([]);
     } finally {
@@ -1488,20 +1442,6 @@ const ResourcesTab = () => {
       setLocationSet(true);
       setLocationInput("");
       searchAdvisors(loc, filter);
-    }
-  };
-
-  const handleUseDeviceLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const loc = `${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`;
-          setLocation("📍 Using device location");
-          setLocationSet(true);
-          searchAdvisors(loc, filter);
-        },
-        () => { /* denied */ }
-      );
     }
   };
 
@@ -1541,7 +1481,7 @@ const ResourcesTab = () => {
         )}
         {!locationSet && (
           <>
-            <p className="text-xs text-muted-foreground">Enter your zip code or city, or use device location</p>
+            <p className="text-xs text-muted-foreground">Enter your zip code or city</p>
             <div className="flex gap-2">
               <input
                 value={locationInput}
@@ -1554,10 +1494,7 @@ const ResourcesTab = () => {
                 Search
               </button>
             </div>
-            <button onClick={handleUseDeviceLocation} className="flex items-center gap-1.5 text-xs text-primary hover:underline">
-              <span className="material-symbols-outlined text-sm">my_location</span>
-              Use my device location instead
-            </button>
+
           </>
         )}
       </div>
