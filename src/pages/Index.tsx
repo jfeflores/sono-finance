@@ -12,6 +12,7 @@ import AuthPage from "@/pages/AuthPage";
 import { OnboardingQuiz, type PersonaTier } from "@/components/onboarding/OnboardingQuiz";
 import GuidedTour, { shouldShowTour } from "@/components/GuidedTour";
 import { supabase } from "@/integrations/supabase/client";
+import type { Session } from "@supabase/supabase-js";
 import { prepareAccountData } from "@/lib/privacy";
 import { clearPremiumCache } from "@/lib/usageLimits";
 
@@ -23,26 +24,38 @@ const Index = () => {
     return saved as PersonaTier | null;
   });
   const [authChecked, setAuthChecked] = useState(false);
-  const [session, setSession] = useState<any>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [sessionGeneration, setSessionGeneration] = useState(0);
   const [showTour, setShowTour] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session: sess } }) => {
-      prepareAccountData(sess?.user.id ?? null);
+    let authEventSeen = false;
+    let currentUserId: string | null = null;
+    let disposed = false;
+    const acceptSession = (sess: Session | null) => {
+      if (disposed) return;
+      const nextUserId = sess?.user.id ?? null;
+      if (nextUserId !== currentUserId) {
+        currentUserId = nextUserId;
+        setSessionGeneration(generation => generation + 1);
+        setAiInitialPrompt(null);
+      }
+      prepareAccountData(nextUserId);
       clearPremiumCache();
       setSession(sess);
       setPersona(localStorage.getItem("sono-persona") as PersonaTier | null);
       setAuthChecked(true);
+    };
+    supabase.auth.getSession().then(({ data: { session: sess } }) => {
+      if (!authEventSeen) acceptSession(sess);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, sess) => {
-      prepareAccountData(sess?.user.id ?? null);
-      clearPremiumCache();
-      setSession(sess);
-      setPersona(localStorage.getItem("sono-persona") as PersonaTier | null);
+      authEventSeen = true;
+      acceptSession(sess);
     });
 
-    return () => subscription.unsubscribe();
+    return () => { disposed = true; subscription.unsubscribe(); };
   }, []);
 
   useEffect(() => {
@@ -107,8 +120,10 @@ const Index = () => {
             {activeTab === "settings" && <SettingsPage />}
             {activeTab === "assistant" && (
               <AssistantPage
+                key={`${session.user.id}:${sessionGeneration}`}
+                accountId={session.user.id}
                 initialPrompt={aiInitialPrompt}
-                onPromptConsumed={() => setAiInitialPrompt(null)}
+                onPromptConsumed={() => setAiInitialPrompt(current => current === aiInitialPrompt ? null : current)}
               />
             )}
           </motion.div>

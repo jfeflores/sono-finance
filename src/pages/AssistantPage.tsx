@@ -5,6 +5,7 @@ import { canUseFeature, recordUsage, getRemainingUses, getLimit, isPremium } fro
 import { BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { useAccountLifetime } from "@/hooks/use-account-lifetime";
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 
@@ -50,6 +51,7 @@ const quickPrompts = [
 ];
 
 interface AssistantPageProps {
+  accountId: string;
   initialPrompt?: string | null;
   onPromptConsumed?: () => void;
 }
@@ -199,120 +201,125 @@ const BudgetUpdateView = ({ call }: { call: ToolCall }) => {
   );
 };
 
-const AssistantPage = ({ initialPrompt, onPromptConsumed }: AssistantPageProps) => {
+const AssistantPage = ({ accountId, initialPrompt, onPromptConsumed }: AssistantPageProps) => {
+  const lifetime = useAccountLifetime(accountId);
   const [messages, setMessages] = useState<Message[]>(loadCachedMessages);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const hasConsumedPrompt = useRef(false);
+  const consumedPrompt = useRef<string | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-    saveCachedMessages(messages);
-  }, [messages]);
-
-  useEffect(() => {
-    if (initialPrompt && !hasConsumedPrompt.current) {
-      hasConsumedPrompt.current = true;
-      setTimeout(() => { sendMessage(initialPrompt); onPromptConsumed?.(); }, 300);
-    }
-    if (!initialPrompt) hasConsumedPrompt.current = false;
-  }, [initialPrompt]);
+    if (lifetime.isCurrent()) saveCachedMessages(messages);
+  }, [messages, lifetime]);
 
   const streamChat = useCallback(async (allMessages: { role: string; content: string }[]) => {
-    const dashboardContext = getLiveDashboardContext();
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) {
-      throw new Error("Please sign in to use the AI assistant");
-    }
-    const resp = await fetch(CHAT_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-      body: JSON.stringify({ messages: allMessages, dashboardContext }),
-    });
+    const task = lifetime.start();
+    try {
+      task.assertCurrent();
+      const dashboardContext = getLiveDashboardContext();
+      const { data: { session } } = await supabase.auth.getSession();
+      task.assertCurrent();
+      if (!session?.access_token || session.user.id !== accountId) {
+        throw new Error("Please sign in to use the AI assistant");
+      }
+      const resp = await fetch(CHAT_URL, {
+        signal: task.signal,
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ messages: allMessages, dashboardContext }),
+      });
+      task.assertCurrent();
 
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ error: "Request failed" }));
-      if (resp.status === 429) toast.error("Rate limited — please wait a moment");
-      if (resp.status === 402) toast.error("AI credits exhausted — add funds in workspace settings");
-      throw new Error(err.error || `Error ${resp.status}`);
-    }
-    if (!resp.body) throw new Error("No response body");
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: "Request failed" }));
+        task.assertCurrent();
+        if (resp.status === 429) toast.error("Rate limited — please wait a moment");
+        if (resp.status === 402) toast.error("AI credits exhausted — add funds in workspace settings");
+        throw new Error(err.error || `Error ${resp.status}`);
+      }
+      if (!resp.body) throw new Error("No response body");
 
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let textBuffer = "";
-    let assistantContent = "";
-    const assistantId = crypto.randomUUID();
-    const collectedToolCalls: Record<number, { name: string; arguments: string }> = {};
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let textBuffer = "";
+      let assistantContent = "";
+      const assistantId = crypto.randomUUID();
+      const collectedToolCalls: Record<number, { name: string; arguments: string }> = {};
 
-    setMessages(prev => [...prev, { id: assistantId, role: "assistant", content: "", time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }]);
+      setMessages(prev => [...prev, { id: assistantId, role: "assistant", content: "", time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }]);
 
-    let streamDone = false;
-    while (!streamDone) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      textBuffer += decoder.decode(value, { stream: true });
-      let newlineIndex: number;
-      while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
-        let line = textBuffer.slice(0, newlineIndex);
-        textBuffer = textBuffer.slice(newlineIndex + 1);
-        if (line.endsWith("\r")) line = line.slice(0, -1);
-        if (line.startsWith(":") || line.trim() === "") continue;
-        if (!line.startsWith("data: ")) continue;
-        const jsonStr = line.slice(6).trim();
-        if (jsonStr === "[DONE]") { streamDone = true; break; }
-        try {
-          const parsed = JSON.parse(jsonStr);
-          const choice = parsed.choices?.[0];
-          const delta = choice?.delta;
-          if (delta?.content) {
-            assistantContent += delta.content;
-            const snapshot = assistantContent;
-            setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: snapshot } : m));
-          }
-          // Collect tool calls
-          if (delta?.tool_calls) {
-            for (const tc of delta.tool_calls) {
-              const idx = tc.index ?? 0;
-              if (!collectedToolCalls[idx]) collectedToolCalls[idx] = { name: "", arguments: "" };
-              if (tc.function?.name) collectedToolCalls[idx].name = tc.function.name;
-              if (tc.function?.arguments) collectedToolCalls[idx].arguments += tc.function.arguments;
+      let streamDone = false;
+      while (!streamDone) {
+        const { done, value } = await reader.read();
+        task.assertCurrent();
+        if (done) break;
+        textBuffer += decoder.decode(value, { stream: true });
+        let newlineIndex: number;
+        while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
+          let line = textBuffer.slice(0, newlineIndex);
+          textBuffer = textBuffer.slice(newlineIndex + 1);
+          if (line.endsWith("\r")) line = line.slice(0, -1);
+          if (line.startsWith(":") || line.trim() === "") continue;
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") { streamDone = true; break; }
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const choice = parsed.choices?.[0];
+            const delta = choice?.delta;
+            if (delta?.content) {
+              assistantContent += delta.content;
+              const snapshot = assistantContent;
+              setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: snapshot } : m));
             }
+            // Collect tool calls
+            if (delta?.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const idx = tc.index ?? 0;
+                if (!collectedToolCalls[idx]) collectedToolCalls[idx] = { name: "", arguments: "" };
+                if (tc.function?.name) collectedToolCalls[idx].name = tc.function.name;
+                if (tc.function?.arguments) collectedToolCalls[idx].arguments += tc.function.arguments;
+              }
+            }
+          } catch {
+            textBuffer = line + "\n" + textBuffer;
+            break;
           }
-        } catch {
-          textBuffer = line + "\n" + textBuffer;
-          break;
         }
       }
-    }
 
-    // Process collected tool calls
-    const toolCalls: ToolCall[] = [];
-    for (const tc of Object.values(collectedToolCalls)) {
-      if (!tc.name) continue;
-      try {
-        const args = JSON.parse(tc.arguments);
-        const call = { name: tc.name, arguments: args };
-        toolCalls.push(call);
-        // Execute side-effect tools
-        if (tc.name === "update_budget") {
-          const result = executeToolCall(call);
-          toast.success(result);
+      // Process collected tool calls
+      const toolCalls: ToolCall[] = [];
+      for (const tc of Object.values(collectedToolCalls)) {
+        task.assertCurrent();
+        if (!tc.name) continue;
+        try {
+          const args = JSON.parse(tc.arguments);
+          const call = { name: tc.name, arguments: args };
+          toolCalls.push(call);
+          // Execute side-effect tools
+          if (tc.name === "update_budget") {
+            const result = executeToolCall(call);
+            toast.success(result);
+          }
+        } catch (e) {
+
         }
-      } catch (e) {
-        
       }
-    }
 
-    if (toolCalls.length > 0) {
-      setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, toolCalls } : m));
+      if (toolCalls.length > 0) {
+        setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, toolCalls } : m));
+      }
+    } finally {
+      task.finish();
     }
-  }, []);
+  }, [accountId, lifetime]);
 
-  const sendMessage = async (text?: string) => {
+  const sendMessage = useCallback(async (text?: string) => {
     const messageText = (text || input).trim();
-    if (!messageText || isLoading) return;
+    if (!messageText || isLoading || !lifetime.isCurrent()) return;
     if (!canUseFeature("chat")) {
       setMessages(prev => [...prev, { id: crypto.randomUUID(), role: "assistant", content: `You've reached your daily limit of ${getLimit("chat")} messages. Upgrade to **Premium** for unlimited! 🚀`, time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }]);
       return;
@@ -326,11 +333,27 @@ const AssistantPage = ({ initialPrompt, onPromptConsumed }: AssistantPageProps) 
     try {
       await streamChat(history);
     } catch (e) {
+      if (!lifetime.isCurrent() || (e instanceof DOMException && e.name === "AbortError")) return;
       setMessages(prev => [...prev, { id: crypto.randomUUID(), role: "assistant", content: `Sorry, something went wrong: ${e instanceof Error ? e.message : "Unknown error"}`, time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }]);
     } finally {
-      setIsLoading(false);
+      if (lifetime.isCurrent()) setIsLoading(false);
     }
-  };
+  }, [input, isLoading, lifetime, messages, streamChat]);
+
+  useEffect(() => {
+    if (!initialPrompt) {
+      consumedPrompt.current = null;
+      return;
+    }
+    if (isLoading || consumedPrompt.current === initialPrompt) return;
+    const timer = setTimeout(() => {
+      if (!lifetime.isCurrent()) return;
+      consumedPrompt.current = initialPrompt;
+      void sendMessage(initialPrompt);
+      onPromptConsumed?.();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [initialPrompt, isLoading, lifetime, onPromptConsumed, sendMessage]);
 
   const clearChat = () => {
     setMessages([]);
