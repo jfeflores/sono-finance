@@ -173,4 +173,4 @@ For changes, follow [`AGENTS.md`](AGENTS.md): use the Bun lockfile, keep private
 
 ## License
 
-No license file is currently included in this repository.
+Licensed under the [Apache License, Version 2.0](LICENSE). Third-party packages and externally sourced content retain their applicable terms.
