@@ -128,6 +128,7 @@ export type Database = {
         Args: { _feature: string; _user_id: string }
         Returns: number
       }
+      consume_daily_usage: { Args: { _feature: string }; Returns: boolean }
       is_premium: { Args: { _user_id: string }; Returns: boolean }
       record_usage: {
         Args: { _feature: string; _user_id: string }

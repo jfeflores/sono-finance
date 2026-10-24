@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { consumeUsage } from "../_shared/usage.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -51,18 +52,6 @@ function validateInput(body: any): string | null {
   return null;
 }
 
-// --- Usage limits ---
-const LIMITS: Record<string, number> = { scenarios: 1 };
-
-async function checkAndRecordUsage(supabase: any, userId: string, feature: string): Promise<boolean> {
-  const { data: isPrem } = await supabase.rpc("is_premium", { _user_id: userId });
-  if (isPrem) return true;
-  const { data: count } = await supabase.rpc("check_daily_usage", { _user_id: userId, _feature: feature });
-  if ((count ?? 0) >= (LIMITS[feature] ?? 1)) return false;
-  await supabase.rpc("record_usage", { _user_id: userId, _feature: feature });
-  return true;
-}
-
 const LESSON_MAP = `
 Available lessons the user can take (use these exact IDs when recommending):
 MONEY BASICS: what-is-money, income-vs-expenses, needs-vs-wants, saving-basics, financial-goals
@@ -103,7 +92,7 @@ serve(async (req) => {
   try {
     const auth = await authenticateRequest(req);
     if (auth instanceof Response) return auth;
-    const { userId, supabase } = auth;
+    const { supabase } = auth;
 
     let body: any;
     try { body = await req.json(); } catch {
@@ -131,7 +120,7 @@ serve(async (req) => {
     // ── BATCH MODE ──
     if (mode === "batch") {
       // Server-side usage check
-      const allowed = await checkAndRecordUsage(supabase, userId, "scenarios");
+      const allowed = await consumeUsage(supabase, "scenarios");
       if (!allowed) {
         return new Response(JSON.stringify({ error: "Daily scenario limit reached. Upgrade to Premium for unlimited access." }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { consumeUsage } from "../_shared/usage.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -41,23 +42,6 @@ function validateMessages(messages: unknown): string | null {
     if ((m as any).content.length > 10000) return "message content cannot exceed 10000 characters";
   }
   return null;
-}
-
-// --- Usage limits ---
-const LIMITS: Record<string, number> = { chat: 5 };
-
-async function checkAndRecordUsage(supabase: any, userId: string, feature: string): Promise<boolean> {
-  // Check premium
-  const { data: isPrem } = await supabase.rpc("is_premium", { _user_id: userId });
-  if (isPrem) return true;
-
-  // Check usage count
-  const { data: count } = await supabase.rpc("check_daily_usage", { _user_id: userId, _feature: feature });
-  if ((count ?? 0) >= (LIMITS[feature] ?? 5)) return false;
-
-  // Record usage
-  await supabase.rpc("record_usage", { _user_id: userId, _feature: feature });
-  return true;
 }
 
 const APP_GUIDE = `
@@ -140,7 +124,7 @@ serve(async (req) => {
   try {
     const auth = await authenticateRequest(req);
     if (auth instanceof Response) return auth;
-    const { userId, supabase } = auth;
+    const { supabase } = auth;
 
     // Parse and validate input
     let body: any;
@@ -158,7 +142,7 @@ serve(async (req) => {
     }
 
     // Server-side usage check
-    const allowed = await checkAndRecordUsage(supabase, userId, "chat");
+    const allowed = await consumeUsage(supabase, "chat");
     if (!allowed) {
       return new Response(JSON.stringify({ error: "Daily limit reached. Upgrade to Premium for unlimited access." }), {
         status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
