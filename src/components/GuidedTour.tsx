@@ -1,3 +1,4 @@
+import { accountLocalStorage } from "@/lib/privacy";
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -57,11 +58,11 @@ const TOUR_STEPS: TourStep[] = [
 const STORAGE_KEY = "sono-tour-completed";
 
 export function shouldShowTour(): boolean {
-  return !localStorage.getItem(STORAGE_KEY);
+  return !accountLocalStorage.getItem(STORAGE_KEY);
 }
 
 export function markTourComplete(): void {
-  localStorage.setItem(STORAGE_KEY, "1");
+  accountLocalStorage.setItem(STORAGE_KEY, "1");
 }
 
 interface GuidedTourProps {

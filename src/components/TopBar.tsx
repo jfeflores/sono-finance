@@ -1,3 +1,4 @@
+import { accountLocalStorage } from "@/lib/privacy";
 import { useState } from "react";
 import NotificationPanel from "@/components/NotificationPanel";
 import StreakModal from "@/components/StreakModal";
@@ -17,7 +18,7 @@ const personaLabels: Record<string, string> = {
 };
 
 function getCompletedLessons(): string[] {
-  try { return JSON.parse(localStorage.getItem("sono-completed-lessons") || "[]"); } catch { return []; }
+  try { return JSON.parse(accountLocalStorage.getItem("sono-completed-lessons") || "[]"); } catch { return []; }
 }
 
 const TopBar = ({ streak }: TopBarProps) => {
@@ -25,7 +26,7 @@ const TopBar = ({ streak }: TopBarProps) => {
   const [streakOpen, setStreakOpen] = useState(false);
   const avatar = getStoredAvatar();
   const userName = "You";
-  const persona = localStorage.getItem("sono-persona") || "Starter";
+  const persona = accountLocalStorage.getItem("sono-persona") || "Starter";
   const userXp = computeXp(getCompletedLessons().length);
 
   return (

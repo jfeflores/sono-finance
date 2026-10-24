@@ -1,10 +1,11 @@
+import { createAccountWork } from "@/lib/privacy";
 import { useLayoutEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 /** Work belongs to this mounted account, including across logout/login as the same user. */
 export function useAccountLifetime(accountId: string) {
   const lifetime = useMemo(() => {
-    const state = { active: true, generation: 0, controllers: new Set<AbortController>() };
+    const state = { active: true, generation: 0, controllers: new Set<{ abort: () => void }>() };
     const invalidate = () => {
       state.active = false;
       state.generation++;
@@ -18,17 +19,18 @@ export function useAccountLifetime(accountId: string) {
       isCurrent: () => state.active,
       start() {
         const generation = state.generation;
-        const controller = new AbortController();
-        const isCurrent = () => state.active && state.generation === generation && !controller.signal.aborted;
+        const work = createAccountWork();
+        const controller = { abort: work.cancel };
+        const isCurrent = () => state.active && state.generation === generation && work.isCurrent();
         if (isCurrent()) state.controllers.add(controller);
         else controller.abort();
         return {
-          signal: controller.signal,
+          signal: work.signal,
           isCurrent,
           assertCurrent() {
             if (!isCurrent()) throw new DOMException("Account changed", "AbortError");
           },
-          finish: () => state.controllers.delete(controller),
+          finish: () => { state.controllers.delete(controller); work.finish(); },
         };
       },
     };

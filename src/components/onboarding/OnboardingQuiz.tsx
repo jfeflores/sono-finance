@@ -1,3 +1,4 @@
+import { accountLocalStorage } from "@/lib/privacy";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -168,7 +169,7 @@ export function OnboardingQuiz({ onComplete }: Props) {
     } else {
       document.documentElement.classList.remove("light");
     }
-    localStorage.setItem("sono-theme", t);
+    accountLocalStorage.setItem("sono-theme", t);
   };
 
   const handleAnswer = (points: number) => {
@@ -276,13 +277,13 @@ export function OnboardingQuiz({ onComplete }: Props) {
 
             <div className="space-y-3">
               <button
-                onClick={() => { localStorage.setItem("sono-bank-connected", "true"); if (resultTier) onComplete(resultTier); }}
+                onClick={() => { accountLocalStorage.setItem("sono-bank-connected", "true"); if (resultTier) onComplete(resultTier); }}
                 className="w-full bg-primary text-primary-foreground font-bold py-3.5 rounded-xl text-sm hover:opacity-90 transition-all active:scale-[0.98]"
               >
                 Connect Bank Account
               </button>
               <button
-                onClick={() => { localStorage.setItem("sono-bank-connected", "false"); if (resultTier) onComplete(resultTier); }}
+                onClick={() => { accountLocalStorage.setItem("sono-bank-connected", "false"); if (resultTier) onComplete(resultTier); }}
                 className={`w-full max-w-[280px] mx-auto text-muted-foreground font-medium py-3 text-sm hover:opacity-80 transition-all`}
               >
                 Skip for now — I'll explore first
@@ -342,7 +343,7 @@ export function OnboardingQuiz({ onComplete }: Props) {
 
             <button
               onClick={() => {
-                localStorage.setItem("sono-goals", JSON.stringify(selectedGoals));
+                accountLocalStorage.setItem("sono-goals", JSON.stringify(selectedGoals));
                 setStep("quiz");
               }}
               disabled={selectedGoals.length === 0}

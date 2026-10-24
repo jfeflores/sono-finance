@@ -1,3 +1,6 @@
+import { createAccountWork } from "@/lib/privacy";
+import { getAccountAccessToken } from "@/lib/accountRequests";
+import { accountSessionStorage } from "@/lib/privacy";
 import { useState, useCallback, useEffect } from "react";
 import { isPremium, getUsageCount, getLimit, recordUsage } from "@/lib/usageLimits";
 import { motion, AnimatePresence } from "framer-motion";
@@ -396,14 +399,14 @@ function getAllTransactions(): TransactionEntry[] { return []; }
 
 function loadOverviewState() {
   try {
-    const raw = sessionStorage.getItem("dash_overview");
+    const raw = accountSessionStorage.getItem("dash_overview");
     if (raw) return JSON.parse(raw);
   } catch {}
   return null;
 }
 
 function saveOverviewState(state: { balance: number; savingsGoal: number; savingsCurrent: number; budgets: BudgetEntry[] }) {
-  sessionStorage.setItem("dash_overview", JSON.stringify(state));
+  accountSessionStorage.setItem("dash_overview", JSON.stringify(state));
 }
 
 const OverviewTab = ({ onAiDiscuss }: { onAiDiscuss?: (prompt: string) => void }) => {
@@ -428,7 +431,7 @@ const OverviewTab = ({ onAiDiscuss }: { onAiDiscuss?: (prompt: string) => void }
   useEffect(() => {
     saveOverviewState({ balance, savingsGoal, savingsCurrent, budgets });
     // Track balance history for growth metric
-    const history = JSON.parse(sessionStorage.getItem("sono-balance-history") || "[]") as { balance: number; ts: number }[];
+    const history = JSON.parse(accountSessionStorage.getItem("sono-balance-history") || "[]") as { balance: number; ts: number }[];
     const lastEntry = history[history.length - 1];
     // Only record if balance changed or no entries yet
     if (!lastEntry || lastEntry.balance !== balance) {
@@ -436,7 +439,7 @@ const OverviewTab = ({ onAiDiscuss }: { onAiDiscuss?: (prompt: string) => void }
       // Keep last 90 days max
       const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
       const trimmed = history.filter((h: { ts: number }) => h.ts > cutoff);
-      sessionStorage.setItem("sono-balance-history", JSON.stringify(trimmed));
+      accountSessionStorage.setItem("sono-balance-history", JSON.stringify(trimmed));
     }
   }, [balance, savingsGoal, savingsCurrent, budgets]);
 
@@ -445,15 +448,15 @@ const OverviewTab = ({ onAiDiscuss }: { onAiDiscuss?: (prompt: string) => void }
   const [digestLoading, setDigestLoading] = useState(false);
 
   const fetchDigest = useCallback(async () => {
+    const work = createAccountWork();
     setDigestLoading(true);
     try {
       const totalSpent = budgets.reduce((s, b) => s + b.spent, 0);
       const totalBudget = budgets.reduce((s, b) => s + b.budget, 0);
       const daysLeft = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() - new Date().getDate();
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) return;
+      const token = await getAccountAccessToken(work);
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/weekly-digest`, {
+        signal: work.signal,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -473,23 +476,26 @@ const OverviewTab = ({ onAiDiscuss }: { onAiDiscuss?: (prompt: string) => void }
           },
         }),
       });
+      work.assertCurrent();
       if (resp.ok) {
         const data = await resp.json();
+        work.assertCurrent();
         setWeeklyDigest(data.digest);
         // Cache with timestamp
-        sessionStorage.setItem("sono-weekly-digest", JSON.stringify({ digest: data.digest, ts: Date.now(), dataHash: `${balance}-${savingsCurrent}-${savingsGoal}` }));
+        accountSessionStorage.setItem("sono-weekly-digest", JSON.stringify({ digest: data.digest, ts: Date.now(), dataHash: `${balance}-${savingsCurrent}-${savingsGoal}` }));
       }
     } catch (e) {
       
     } finally {
-      setDigestLoading(false);
+      work.finish();
+      if (work.isCurrent()) setDigestLoading(false);
     }
   }, [balance, savingsCurrent, savingsGoal, budgets]);
 
   // Load cached digest or fetch new one
   useEffect(() => {
     try {
-      const cached = sessionStorage.getItem("sono-weekly-digest");
+      const cached = accountSessionStorage.getItem("sono-weekly-digest");
       if (cached) {
         const { digest, ts, dataHash } = JSON.parse(cached);
         const age = Date.now() - ts;
@@ -604,7 +610,7 @@ const OverviewTab = ({ onAiDiscuss }: { onAiDiscuss?: (prompt: string) => void }
           <div>
             <span className="text-3xl font-bold text-foreground tracking-tight">${balance.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
             {(() => {
-              const history = JSON.parse(sessionStorage.getItem("sono-balance-history") || "[]") as { balance: number; ts: number }[];
+              const history = JSON.parse(accountSessionStorage.getItem("sono-balance-history") || "[]") as { balance: number; ts: number }[];
               const now = Date.now();
               const monthAgo = now - 30 * 24 * 60 * 60 * 1000;
               const prevEntry = history.filter(h => h.ts < monthAgo).pop() || history[0];
@@ -964,7 +970,7 @@ function useAiInsight(prompt: string, deps: string) {
     if (!getHasData()) return;
     const cacheKey = `sono-ai-insight-${btoa(deps).slice(0, 32)}`;
     try {
-      const cached = sessionStorage.getItem(cacheKey);
+      const cached = accountSessionStorage.getItem(cacheKey);
       if (cached) {
         const { text, ts } = JSON.parse(cached);
         if (Date.now() - ts < 3600000) { setInsight(text); return; }
@@ -972,17 +978,18 @@ function useAiInsight(prompt: string, deps: string) {
     } catch {}
 
     let cancelled = false;
+    const work = createAccountWork();
     (async () => {
       setLoading(true);
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-      if (!token) return;
+        const token = await getAccountAccessToken(work);
         const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
+          signal: work.signal,
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ feature: "insights", messages: [{ role: "user", content: prompt }] }),
         });
+        work.assertCurrent();
         if (!resp.ok || !resp.body) return;
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
@@ -990,6 +997,7 @@ function useAiInsight(prompt: string, deps: string) {
         let full = "";
         while (true) {
           const { done, value } = await reader.read();
+          work.assertCurrent();
           if (done) break;
           buf += decoder.decode(value, { stream: true });
           let idx: number;
@@ -1006,14 +1014,14 @@ function useAiInsight(prompt: string, deps: string) {
             } catch {}
           }
         }
-        if (!cancelled && full) {
+        if (!cancelled && work.isCurrent() && full) {
           setInsight(full);
-          sessionStorage.setItem(cacheKey, JSON.stringify({ text: full, ts: Date.now() }));
+          accountSessionStorage.setItem(cacheKey, JSON.stringify({ text: full, ts: Date.now() }));
         }
       } catch (e) {  }
-      finally { if (!cancelled) setLoading(false); }
+      finally { work.finish(); if (!cancelled && work.isCurrent()) setLoading(false); }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; work.cancel(); };
   }, [deps]);
 
   return { insight, loading };
@@ -1413,12 +1421,17 @@ const ResourcesTab = () => {
   const [searched, setSearched] = useState(false);
 
   const searchAdvisors = useCallback(async (loc: string, type: string | null) => {
+    const work = createAccountWork();
     setLoading(true);
     setError(null);
     try {
+      const token = await getAccountAccessToken(work);
       const { data, error: fnError } = await supabase.functions.invoke('search-advisors', {
         body: { location: loc, type },
+        headers: { Authorization: `Bearer ${token}` },
+        signal: work.signal,
       });
+      work.assertCurrent();
       if (fnError) throw new Error(fnError.message);
       if (!data?.success) throw new Error(data?.error || 'Search failed');
       setAdvisors((data.advisors || []).flatMap((advisor: LiveAdvisor) => {
@@ -1427,11 +1440,13 @@ const ResourcesTab = () => {
       }));
       setSearched(true);
     } catch (e: any) {
+      if (!work.isCurrent()) return;
       
       setError(e.message || 'Failed to search. Please try again.');
       setAdvisors([]);
     } finally {
-      setLoading(false);
+      work.finish();
+      if (work.isCurrent()) setLoading(false);
     }
   }, []);
 

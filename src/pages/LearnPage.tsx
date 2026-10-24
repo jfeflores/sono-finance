@@ -1,3 +1,4 @@
+import { accountLocalStorage } from "@/lib/privacy";
 import { useState, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import LessonView from "@/components/learning/LessonView";
@@ -228,14 +229,14 @@ const LearnPage = ({ persona }: LearnPageProps) => {
   const [activeLesson, setActiveLesson] = useState<string | null>(null);
   const [showRunner, setShowRunner] = useState(false);
   const [completedLessons, setCompletedLessons] = useState<Set<string>>(() => {
-    // Merge persona-initial completions with localStorage completions
+    // Merge persona-initial completions with accountLocalStorage completions
     const initial = getInitialCompleted(persona);
     try {
-      const stored: string[] = JSON.parse(localStorage.getItem("sono-completed-lessons") || "[]");
+      const stored: string[] = JSON.parse(accountLocalStorage.getItem("sono-completed-lessons") || "[]");
       stored.forEach(id => initial.add(id));
     } catch {}
     // Persist the merged set so TopBar/HubPage see the same XP
-    localStorage.setItem("sono-completed-lessons", JSON.stringify([...initial]));
+    accountLocalStorage.setItem("sono-completed-lessons", JSON.stringify([...initial]));
     return initial;
   });
   
@@ -250,8 +251,8 @@ const LearnPage = ({ persona }: LearnPageProps) => {
     setCompletedLessons(prev => {
       const next = new Set(prev);
       next.add(lessonId);
-      // Sync to localStorage so XP is consistent across all pages
-      localStorage.setItem("sono-completed-lessons", JSON.stringify([...next]));
+      // Sync to accountLocalStorage so XP is consistent across all pages
+      accountLocalStorage.setItem("sono-completed-lessons", JSON.stringify([...next]));
       return next;
     });
   }, []);

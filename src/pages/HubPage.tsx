@@ -1,3 +1,6 @@
+import { createAccountWork } from "@/lib/privacy";
+import { getAccountAccessToken } from "@/lib/accountRequests";
+import { accountLocalStorage, accountSessionStorage } from "@/lib/privacy";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { getStoredAvatar, AvatarPreview } from "@/components/learn/AvatarCreator";
@@ -6,7 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 function getDashboardData() {
   try {
-    const raw = sessionStorage.getItem("dash_overview");
+    const raw = accountSessionStorage.getItem("dash_overview");
     if (raw) {
       const d = JSON.parse(raw);
       return {
@@ -31,7 +34,7 @@ const FAKE_USERS = [
 
 function getCompletedLessons(): string[] {
   try {
-    return JSON.parse(sessionStorage.getItem("sono-completed-lessons") || "[]");
+    return JSON.parse(accountLocalStorage.getItem("sono-completed-lessons") || "[]");
   } catch { return []; }
 }
 
@@ -96,7 +99,7 @@ const ForecastSection = ({ balance, savingsCurrent, totalSpent }: { balance: num
     if (totalSpent === 0) return;
     const cacheKey = "sono-forecast-ai";
     try {
-      const cached = sessionStorage.getItem(cacheKey);
+      const cached = accountSessionStorage.getItem(cacheKey);
       if (cached) {
         const { text, ts, hash } = JSON.parse(cached);
         if (Date.now() - ts < 3600000 && hash === `${balance}-${savingsCurrent}-${totalSpent}`) {
@@ -107,19 +110,20 @@ const ForecastSection = ({ balance, savingsCurrent, totalSpent }: { balance: num
     } catch {}
 
     let cancelled = false;
+    const work = createAccountWork();
     (async () => {
       setAiLoading(true);
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        if (!token) return;
+        const token = await getAccountAccessToken(work);
         const prompt = `You are a concise financial advisor. Based on this data, give exactly 2 short, specific recommendations (each 1 sentence). Net worth: $${forecast.netWorth.toLocaleString()}, monthly income ~$${forecast.monthlyIncome.toLocaleString()}, monthly spending: $${forecast.totalSpent.toLocaleString()}, monthly savings rate: $${forecast.monthlySavingsRate.toLocaleString()}, savings: $${savingsCurrent.toLocaleString()}. Net worth trend: ${netWorthTrend ? "growing" : "declining"}. Spending trend: ${spendingTrend ? "increasing" : "stable/decreasing"}. Format as two bullet points starting with emoji.`;
 
         const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`, {
+          signal: work.signal,
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ feature: "insights", messages: [{ role: "user", content: prompt }] }),
         });
+        work.assertCurrent();
         if (!resp.ok || !resp.body) return;
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
@@ -127,6 +131,7 @@ const ForecastSection = ({ balance, savingsCurrent, totalSpent }: { balance: num
         let full = "";
         while (true) {
           const { done, value } = await reader.read();
+          work.assertCurrent();
           if (done) break;
           buf += decoder.decode(value, { stream: true });
           let idx: number;
@@ -143,14 +148,14 @@ const ForecastSection = ({ balance, savingsCurrent, totalSpent }: { balance: num
             } catch {}
           }
         }
-        if (!cancelled && full) {
+        if (!cancelled && work.isCurrent() && full) {
           setAiRec(full);
-          sessionStorage.setItem(cacheKey, JSON.stringify({ text: full, ts: Date.now(), hash: `${balance}-${savingsCurrent}-${totalSpent}` }));
+          accountSessionStorage.setItem(cacheKey, JSON.stringify({ text: full, ts: Date.now(), hash: `${balance}-${savingsCurrent}-${totalSpent}` }));
         }
       } catch (e) {  }
-      finally { if (!cancelled) setAiLoading(false); }
+      finally { work.finish(); if (!cancelled && work.isCurrent()) setAiLoading(false); }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; work.cancel(); };
   }, [balance, savingsCurrent, totalSpent]);
 
   return (

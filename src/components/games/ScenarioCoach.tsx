@@ -1,3 +1,6 @@
+import { createAccountWork } from "@/lib/privacy";
+import { getAccountAccessToken } from "@/lib/accountRequests";
+import { accountLocalStorage } from "@/lib/privacy";
 import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { canUseFeature, recordUsage, getRemainingUses, getLimit, isPremium } from "@/lib/usageLimits";
@@ -44,7 +47,7 @@ function getTodayStr() {
 
 function loadCache(): ScenarioCache | null {
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
+    const raw = accountLocalStorage.getItem(CACHE_KEY);
     if (!raw) return null;
     const cache = JSON.parse(raw) as ScenarioCache;
     if (cache.date !== getTodayStr()) return null; // expired
@@ -55,7 +58,7 @@ function loadCache(): ScenarioCache | null {
 }
 
 function saveCache(cache: ScenarioCache) {
-  localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+  accountLocalStorage.setItem(CACHE_KEY, JSON.stringify(cache));
 }
 
 interface ScenarioCoachProps {
@@ -92,6 +95,7 @@ export default function ScenarioCoach({ persona, completedLessons, onGoToLesson 
       setError(`You've used all ${getLimit("scenarios")} daily scenarios on the free plan. Upgrade to Premium for unlimited! 🚀`);
       return;
     }
+    const work = createAccountWork();
     setLoading(true);
     setError(null);
     setShowEvaluation(false);
@@ -101,9 +105,13 @@ export default function ScenarioCoach({ persona, completedLessons, onGoToLesson 
       let retries = 0;
       let result: any = null;
       while (retries < 2) {
+        const token = await getAccountAccessToken(work);
         const { data, error: fnError } = await supabase.functions.invoke("scenario-coach", {
           body: { persona, completedLessons, mode: "batch" },
+          headers: { Authorization: `Bearer ${token}` },
+          signal: work.signal,
         });
+        work.assertCurrent();
         if (fnError) {
           retries++;
           if (retries >= 2) throw new Error(fnError.message);
@@ -120,6 +128,7 @@ export default function ScenarioCoach({ persona, completedLessons, onGoToLesson 
         break;
       }
 
+      work.assertCurrent();
       const questions: StoredQuestion[] = (result.data as any[]).map(q => ({
         ...q,
         answered: false,
@@ -138,9 +147,11 @@ export default function ScenarioCoach({ persona, completedLessons, onGoToLesson 
       setCache(newCache);
       recordUsage("scenarios");
     } catch (e: any) {
+      if (!work.isCurrent()) return;
       setError(e.message || "Something went wrong");
     } finally {
-      setLoading(false);
+      work.finish();
+      if (work.isCurrent()) setLoading(false);
     }
   }, [persona, completedLessons]);
 

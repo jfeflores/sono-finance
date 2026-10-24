@@ -1,3 +1,4 @@
+import { accountLocalStorage } from "@/lib/privacy";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -32,7 +33,7 @@ const DEFAULT_AVATAR: AvatarConfig = {
 
 export function getStoredAvatar(): AvatarConfig {
   try {
-    const saved = localStorage.getItem("sono-avatar");
+    const saved = accountLocalStorage.getItem("sono-avatar");
     return saved ? JSON.parse(saved) : DEFAULT_AVATAR;
   } catch {
     return DEFAULT_AVATAR;
@@ -40,7 +41,7 @@ export function getStoredAvatar(): AvatarConfig {
 }
 
 function saveAvatar(config: AvatarConfig) {
-  localStorage.setItem("sono-avatar", JSON.stringify(config));
+  accountLocalStorage.setItem("sono-avatar", JSON.stringify(config));
 }
 
 interface AvatarCreatorProps {

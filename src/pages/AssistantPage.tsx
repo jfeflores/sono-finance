@@ -1,3 +1,4 @@
+import { accountSessionStorage } from "@/lib/privacy";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
@@ -24,7 +25,7 @@ interface Message {
 
 function getLiveDashboardContext() {
   try {
-    const raw = sessionStorage.getItem("dash_overview");
+    const raw = accountSessionStorage.getItem("dash_overview");
     if (raw) {
       const d = JSON.parse(raw);
       const balance = d.balance ?? 0;
@@ -61,12 +62,12 @@ const MAX_CACHED = 50;
 
 function loadCachedMessages(): Message[] {
   try {
-    const raw = sessionStorage.getItem(CACHE_KEY);
+    const raw = accountSessionStorage.getItem(CACHE_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch { return []; }
 }
 function saveCachedMessages(msgs: Message[]) {
-  try { sessionStorage.setItem(CACHE_KEY, JSON.stringify(msgs.slice(-MAX_CACHED))); } catch {}
+  try { accountSessionStorage.setItem(CACHE_KEY, JSON.stringify(msgs.slice(-MAX_CACHED))); } catch {}
 }
 
 /* ── Tool execution ── */
@@ -74,7 +75,7 @@ function executeToolCall(call: ToolCall): string {
   const args = call.arguments;
   if (call.name === "update_budget") {
     try {
-      const raw = sessionStorage.getItem("dash_overview");
+      const raw = accountSessionStorage.getItem("dash_overview");
       if (!raw) return "No dashboard data found.";
       const d = JSON.parse(raw);
       const budgets = d.budgets ?? [];
@@ -83,7 +84,7 @@ function executeToolCall(call: ToolCall): string {
       if (args.newBudget !== undefined) budgets[idx].budget = args.newBudget;
       if (args.newSpent !== undefined) budgets[idx].spent = args.newSpent;
       d.budgets = budgets;
-      sessionStorage.setItem("dash_overview", JSON.stringify(d));
+      accountSessionStorage.setItem("dash_overview", JSON.stringify(d));
       return `Updated ${args.category}: budget=$${budgets[idx].budget}, spent=$${budgets[idx].spent}`;
     } catch { return "Failed to update budget."; }
   }
@@ -357,7 +358,7 @@ const AssistantPage = ({ accountId, initialPrompt, onPromptConsumed }: Assistant
 
   const clearChat = () => {
     setMessages([]);
-    sessionStorage.removeItem(CACHE_KEY);
+    accountSessionStorage.removeItem(CACHE_KEY);
   };
 
   return (

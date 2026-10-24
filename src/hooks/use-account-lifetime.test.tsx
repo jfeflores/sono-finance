@@ -1,3 +1,4 @@
+import { clearAccountData, prepareAccountData } from "@/lib/privacy";
 import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -23,6 +24,8 @@ describe("account work lifetime", () => {
     auth.listeners.forEach(callback => callback(event, owner ? { user: { id: owner } } : null));
   });
   beforeEach(() => {
+    clearAccountData();
+    prepareAccountData("A");
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     element = document.createElement("div");
     document.body.append(element);

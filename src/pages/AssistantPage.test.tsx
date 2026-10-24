@@ -1,3 +1,4 @@
+import { clearAccountData, prepareAccountData } from "@/lib/privacy";
 import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,6 +32,8 @@ describe("assistant request lifetime", () => {
   const advance = () => act(async () => { await vi.advanceTimersByTimeAsync(300); });
 
   beforeEach(() => {
+    clearAccountData();
+    prepareAccountData("A");
     vi.useFakeTimers();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });

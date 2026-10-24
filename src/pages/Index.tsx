@@ -1,3 +1,4 @@
+import { accountLocalStorage } from "@/lib/privacy";
 import { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import TopBar from "@/components/TopBar";
@@ -20,7 +21,7 @@ const Index = () => {
   const [activeTab, setActiveTab] = useState("home");
   const [aiInitialPrompt, setAiInitialPrompt] = useState<string | null>(null);
   const [persona, setPersona] = useState<PersonaTier | null>(() => {
-    const saved = localStorage.getItem("sono-persona");
+    const saved = accountLocalStorage.getItem("sono-persona");
     return saved as PersonaTier | null;
   });
   const [authChecked, setAuthChecked] = useState(false);
@@ -35,15 +36,17 @@ const Index = () => {
     const acceptSession = (sess: Session | null) => {
       if (disposed) return;
       const nextUserId = sess?.user.id ?? null;
+      prepareAccountData(nextUserId);
       if (nextUserId !== currentUserId) {
+        clearPremiumCache();
         currentUserId = nextUserId;
         setSessionGeneration(generation => generation + 1);
         setAiInitialPrompt(null);
+        setActiveTab("home");
+        setShowTour(false);
       }
-      prepareAccountData(nextUserId);
-      clearPremiumCache();
       setSession(sess);
-      setPersona(localStorage.getItem("sono-persona") as PersonaTier | null);
+      setPersona(accountLocalStorage.getItem("sono-persona") as PersonaTier | null);
       setAuthChecked(true);
     };
     supabase.auth.getSession().then(({ data: { session: sess } }) => {
@@ -59,7 +62,7 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem("sono-theme");
+    const savedTheme = accountLocalStorage.getItem("sono-theme");
     if (savedTheme === "light") {
       document.documentElement.classList.add("light");
     } else {
@@ -68,7 +71,7 @@ const Index = () => {
   }, []);
 
   const handleOnboardingComplete = (tier: PersonaTier) => {
-    localStorage.setItem("sono-persona", tier);
+    accountLocalStorage.setItem("sono-persona", tier);
     setPersona(tier);
   };
 
@@ -92,11 +95,11 @@ const Index = () => {
   }
 
   if (!persona) {
-    return <OnboardingQuiz onComplete={handleOnboardingComplete} />;
+    return <OnboardingQuiz key={`${session.user.id}:${sessionGeneration}`} onComplete={handleOnboardingComplete} />;
   }
 
   return (
-    <div className="min-h-screen bg-surface-lowest">
+    <div key={`${session.user.id}:${sessionGeneration}`} className="min-h-screen bg-surface-lowest">
       <TopBar streak={12} />
 
       <main className="pt-16 pb-24 px-4 max-w-2xl mx-auto">

@@ -1,3 +1,6 @@
+import { createAccountWork } from "@/lib/privacy";
+import { saveAccountProfile } from "@/lib/accountRequests";
+import { accountLocalStorage } from "@/lib/privacy";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { checkPremium } from "@/lib/usageLimits";
@@ -48,10 +51,10 @@ const SettingsPage = () => {
     setDarkMode(newDark);
     if (newDark) {
       document.documentElement.classList.remove("light");
-      localStorage.setItem("sono-theme", "dark");
+      accountLocalStorage.setItem("sono-theme", "dark");
     } else {
       document.documentElement.classList.add("light");
-      localStorage.setItem("sono-theme", "light");
+      accountLocalStorage.setItem("sono-theme", "light");
     }
   };
 
@@ -73,33 +76,22 @@ const SettingsPage = () => {
     if (!name) { toast.error("Name cannot be empty"); return; }
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast.error("Enter a valid email"); return; }
 
+    const work = createAccountWork();
     setSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+      const emailChanged = await saveAccountProfile(work, { name, email, currentEmail: displayEmail });
+      if (emailChanged) toast.info("Check your new email for a confirmation link");
 
-      // Update display name in profiles table
-      const { error: profileErr } = await supabase.from("profiles").update({ display_name: name }).eq("id", user.id);
-      if (profileErr) throw profileErr;
-
-      // Update email via auth if changed
-      if (email !== user.email) {
-        const { error: emailErr } = await supabase.auth.updateUser({ email });
-        if (emailErr) throw emailErr;
-        toast.info("Check your new email for a confirmation link");
-      }
-
-      // Sync localStorage
-      
-      
       setDisplayName(name);
       setDisplayEmail(email);
       setEditOpen(false);
       toast.success("Profile updated");
     } catch (err: any) {
+      if (!work.isCurrent()) return;
       toast.error(err.message || "Failed to update profile");
     } finally {
-      setSaving(false);
+      work.finish();
+      if (work.isCurrent()) setSaving(false);
     }
   };
 

@@ -1,3 +1,4 @@
+import { accountLocalStorage } from "@/lib/privacy";
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,24 +14,24 @@ interface StreakModalProps {
 
 /* ── Currency helpers ── */
 function getSononite(): number {
-  return parseInt(localStorage.getItem("sono-sononite") || "0", 10);
+  return parseInt(accountLocalStorage.getItem("sono-sononite") || "0", 10);
 }
 function setSononite(val: number) {
-  localStorage.setItem("sono-sononite", val.toString());
+  accountLocalStorage.setItem("sono-sononite", val.toString());
 }
 function getInventory(): { freezes: number; hearts: number } {
   try {
-    return JSON.parse(localStorage.getItem("sono-inventory") || '{"freezes":0,"hearts":0}');
+    return JSON.parse(accountLocalStorage.getItem("sono-inventory") || '{"freezes":0,"hearts":0}');
   } catch { return { freezes: 0, hearts: 0 }; }
 }
 function setInventory(inv: { freezes: number; hearts: number }) {
-  localStorage.setItem("sono-inventory", JSON.stringify(inv));
+  accountLocalStorage.setItem("sono-inventory", JSON.stringify(inv));
 }
 
 // Compute sononite from completed paths (each path = a set of completed lessons in a topic)
 function computeEarnedSononite(): number {
   try {
-    const completed: string[] = JSON.parse(localStorage.getItem("sono-completed-lessons") || "[]");
+    const completed: string[] = JSON.parse(accountLocalStorage.getItem("sono-completed-lessons") || "[]");
     const paths: Record<string, number> = {};
     completed.forEach(id => {
       const topic = id.replace(/-\d+$/, "");
@@ -56,7 +57,7 @@ export default function StreakModal({ open, onClose, streak }: StreakModalProps)
   useEffect(() => {
     if (!open) return;
     const earned = computeEarnedSononite();
-    const spent = parseInt(localStorage.getItem("sono-sononite-spent") || "0", 10);
+    const spent = parseInt(accountLocalStorage.getItem("sono-sononite-spent") || "0", 10);
     const balance = Math.max(earned - spent, 0);
     setSononite(balance);
     setSononiteState(balance);
@@ -71,8 +72,8 @@ export default function StreakModal({ open, onClose, streak }: StreakModalProps)
       toast.error("Not enough Sononite!", { description: `You need ${cost} but have ${sononite}.` });
       return;
     }
-    const spent = parseInt(localStorage.getItem("sono-sononite-spent") || "0", 10);
-    localStorage.setItem("sono-sononite-spent", (spent + cost).toString());
+    const spent = parseInt(accountLocalStorage.getItem("sono-sononite-spent") || "0", 10);
+    accountLocalStorage.setItem("sono-sononite-spent", (spent + cost).toString());
     const newBalance = sononite - cost;
     setSononite(newBalance);
     setSononiteState(newBalance);
